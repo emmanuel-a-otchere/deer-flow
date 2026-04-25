@@ -3,7 +3,7 @@
 # serve.sh — Unified DeerFlow service launcher
 #
 # Usage:
-#   ./scripts/serve.sh [--dev|--prod] [--gateway] [--daemon] [--stop|--restart]
+#   ./scripts/serve.sh [--dev|--prod] [--gateway] [--daemon] [--proxychains] [--stop|--restart]
 #
 # Modes:
 #   --dev       Development mode with hot-reload (default)
@@ -11,6 +11,7 @@
 #   --gateway   Gateway mode (experimental): skip LangGraph server,
 #               agent runtime embedded in Gateway API
 #   --daemon    Run all services in background (nohup), exit after startup
+#   --proxychains Use proxychains4 for backend services
 #
 # Actions:
 #   --skip-install  Skip dependency installation (faster restart)
@@ -19,6 +20,7 @@
 #
 # Examples:
 #   ./scripts/serve.sh --dev                 # Standard dev (4 processes)
+#   ./scripts/serve.sh --dev --proxychains   # Dev with proxychains
 #   ./scripts/serve.sh --dev --gateway       # Gateway dev  (3 processes)
 #   ./scripts/serve.sh --prod --gateway      # Gateway prod (3 processes)
 #   ./scripts/serve.sh --dev --daemon        # Standard dev, background
@@ -47,6 +49,7 @@ DEV_MODE=true
 GATEWAY_MODE=false
 DAEMON_MODE=false
 SKIP_INSTALL=false
+USE_PROXYCHAINS=${USE_PROXYCHAINS:-false}
 ACTION="start"   # start | stop | restart
 
 for arg in "$@"; do
@@ -56,11 +59,12 @@ for arg in "$@"; do
         --gateway) GATEWAY_MODE=true ;;
         --daemon)  DAEMON_MODE=true ;;
         --skip-install) SKIP_INSTALL=true ;;
+        --proxychains) USE_PROXYCHAINS=true ;;
         --stop)    ACTION="stop" ;;
         --restart) ACTION="restart" ;;
         *)
             echo "Unknown argument: $arg"
-            echo "Usage: $0 [--dev|--prod] [--gateway] [--daemon] [--skip-install] [--stop|--restart]"
+            echo "Usage: $0 [--dev|--prod] [--gateway] [--daemon] [--skip-install] [--proxychains] [--stop|--restart]"
             exit 1
             ;;
     esac
@@ -115,6 +119,23 @@ if $GATEWAY_MODE; then
     export SKIP_LANGGRAPH_SERVER=1
 fi
 
+if [ "$USE_PROXYCHAINS" = "1" ]; then
+    USE_PROXYCHAINS=true
+fi
+
+PROXY_CMD=""
+if [ "$USE_PROXYCHAINS" = "true" ]; then
+    if command -v proxychains4 >/dev/null 2>&1; then
+        PROXY_CMD="proxychains4 -q"
+        if [ -f "$REPO_ROOT/proxychains.conf" ]; then
+            export PROXYCHAINS_CONF_FILE="$REPO_ROOT/proxychains.conf"
+        fi
+    else
+        echo "⚠ Warning: proxychains4 not found, proceeding without it"
+        USE_PROXYCHAINS=false
+    fi
+fi
+
 # Mode label for banner
 if $DEV_MODE && $GATEWAY_MODE; then
     MODE_LABEL="DEV + GATEWAY (experimental)"
@@ -124,6 +145,10 @@ elif $GATEWAY_MODE; then
     MODE_LABEL="PROD + GATEWAY (experimental)"
 else
     MODE_LABEL="PROD (optimized)"
+fi
+
+if $USE_PROXYCHAINS; then
+    MODE_LABEL="$MODE_LABEL [proxychains]"
 fi
 
 if $DAEMON_MODE; then
@@ -242,16 +267,21 @@ trap cleanup INT TERM
 
 # ── Helper: start a service ──────────────────────────────────────────────────
 
-# run_service NAME COMMAND PORT TIMEOUT
+# run_service NAME COMMAND PORT TIMEOUT [USE_PROXY]
 # In daemon mode, wraps with nohup. Waits for port to be ready.
 run_service() {
-    local name="$1" cmd="$2" port="$3" timeout="$4"
+    local name="$1" cmd="$2" port="$3" timeout="$4" use_proxy="${5:-true}"
 
     echo "Starting $name..."
+    local final_cmd="$cmd"
+    if [ -n "$PROXY_CMD" ] && [ "$use_proxy" = "true" ]; then
+        final_cmd="$PROXY_CMD sh -c \"$cmd\""
+    fi
+
     if $DAEMON_MODE; then
-        nohup sh -c "$cmd" > /dev/null 2>&1 &
+        nohup sh -c "$final_cmd" > /dev/null 2>&1 &
     else
-        sh -c "$cmd" &
+        sh -c "$final_cmd" &
     fi
 
     ./scripts/wait-for-port.sh "$port" "$timeout" "$name" || {
@@ -298,7 +328,7 @@ run_service "Frontend" \
 # 4. Nginx
 run_service "Nginx" \
     "nginx -g 'daemon off;' -c '$REPO_ROOT/docker/nginx/nginx.local.conf' -p '$REPO_ROOT' > logs/nginx.log 2>&1" \
-    2026 10
+    2026 10 false
 
 # ── Ready ────────────────────────────────────────────────────────────────────
 

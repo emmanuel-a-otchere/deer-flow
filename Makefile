@@ -5,6 +5,12 @@
 BASH ?= bash
 BACKEND_UV_RUN = cd backend && uv run
 
+# Optional flags for serve.sh (e.g., make dev USE_PROXYCHAINS=1)
+SERVE_FLAGS =
+ifeq ($(USE_PROXYCHAINS),1)
+    SERVE_FLAGS += --proxychains
+endif
+
 # Detect OS for Windows compatibility
 ifeq ($(OS),Windows_NT)
     SHELL := cmd.exe
@@ -35,6 +41,9 @@ help:
 	@echo "  make start-daemon-pro - Start prod daemon + Gateway mode (experimental)"
 	@echo "  make stop            - Stop all running services"
 	@echo "  make clean           - Clean up processes and temporary files"
+	@echo ""
+	@echo "Proxy Support:"
+	@echo "  USE_PROXYCHAINS=1 make dev  - Run with proxychains4 support"
 	@echo ""
 	@echo "Docker Production Commands:"
 	@echo "  make up              - Build and start production Docker services (localhost:2026)"
@@ -119,42 +128,42 @@ setup-sandbox:
 # Start all services in development mode (with hot-reloading)
 dev:
 	@$(PYTHON) ./scripts/check.py
-	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --dev
+	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --dev $(SERVE_FLAGS)
 
 # Start all services in dev + Gateway mode (experimental: agent runtime embedded in Gateway)
 dev-pro:
 	@$(PYTHON) ./scripts/check.py
-	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --dev --gateway
+	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --dev --gateway $(SERVE_FLAGS)
 
 # Start all services in production mode (with optimizations)
 start:
 	@$(PYTHON) ./scripts/check.py
-	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --prod
+	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --prod $(SERVE_FLAGS)
 
 # Start all services in prod + Gateway mode (experimental)
 start-pro:
 	@$(PYTHON) ./scripts/check.py
-	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --prod --gateway
+	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --prod --gateway $(SERVE_FLAGS)
 
 # Start all services in daemon mode (background)
 dev-daemon:
 	@$(PYTHON) ./scripts/check.py
-	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --dev --daemon
+	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --dev --daemon $(SERVE_FLAGS)
 
 # Start daemon + Gateway mode (experimental)
 dev-daemon-pro:
 	@$(PYTHON) ./scripts/check.py
-	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --dev --gateway --daemon
+	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --dev --gateway --daemon $(SERVE_FLAGS)
 
 # Start prod services in daemon mode (background)
 start-daemon:
 	@$(PYTHON) ./scripts/check.py
-	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --prod --daemon
+	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --prod --daemon $(SERVE_FLAGS)
 
 # Start prod daemon + Gateway mode (experimental)
 start-daemon-pro:
 	@$(PYTHON) ./scripts/check.py
-	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --prod --gateway --daemon
+	@$(RUN_WITH_GIT_BASH) ./scripts/serve.sh --prod --gateway --daemon $(SERVE_FLAGS)
 
 # Stop all services
 stop:
